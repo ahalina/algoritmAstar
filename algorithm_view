@@ -1,0 +1,196 @@
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import numpy as np
+from matplotlib.widgets import Button, Slider
+import heapq
+
+class Node:
+    def __init__(self, parent=None, position=None):
+        self.parent = parent
+        self.position = position
+        self.g = 0  
+        self.h = 0 
+        self.f = 0 
+
+    def __eq__(self, other):
+        return self.position == other.position
+
+    def __lt__(self, other):
+        return self.f < other.f
+
+    def __repr__(self):
+        return f"Node({self.position})"
+
+    def __hash__(self):
+        return hash(self.position)
+
+def a_star_search(grid, start, end):
+    start_node = Node(None, start)
+    end_node = Node(None, end)
+    open_list = []
+    closed_list = set()
+    explored_nodes = []
+    
+    heapq.heappush(open_list, start_node)
+    
+    while open_list:
+        current_node = heapq.heappop(open_list)
+        explored_nodes.append(current_node.position)
+        closed_list.add(current_node)
+        
+        if current_node == end_node:
+            path = []
+            current = current_node
+            while current is not None:
+                path.append(current.position)
+                current = current.parent
+            return path[::-1], explored_nodes
+            
+        for new_position in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+            node_position = (current_node.position[0] + new_position[0],
+                           current_node.position[1] + new_position[1])
+            
+            if not (0 <= node_position[0] < len(grid) and 0 <= node_position[1] < len(grid[0])):
+                continue
+            
+            if grid[node_position[0]][node_position[1]] != 0:
+                continue
+            
+            new_node = Node(current_node, node_position)
+            
+            if new_node in closed_list:
+                continue
+            
+            new_node.g = current_node.g + 1
+            new_node.h = abs(new_node.position[0] - end_node.position[0]) + \
+                        abs(new_node.position[1] - end_node.position[1])
+            new_node.f = new_node.g + new_node.h
+            
+            if any(open_node for open_node in open_list if new_node == open_node and new_node.g >= open_node.g):
+                continue
+
+            heapq.heappush(open_list, new_node)
+            
+    return [], explored_nodes
+
+class AStarVisualizer:
+    def __init__(self, grid, path, explored, start, end):
+        self.grid = grid
+        self.path = path
+        self.explored = explored
+        self.start = start
+        self.end = end
+        self.current_frame = 0
+        self.playing = False
+        self.speed = 500  # ms
+        
+        self.fig, self.ax = plt.subplots(figsize=(10, 10))
+        plt.subplots_adjust(bottom=0.2)
+        
+        self.cmap = mcolors.ListedColormap(['white', 'black', 'green', 'red', 'blue', 'yellow'])
+        self.bounds = [0, 1, 2, 3, 4, 5, 6]
+        self.norm = mcolors.BoundaryNorm(self.bounds, self.cmap.N)
+        
+        # Создаем кнопки
+        ax_play = plt.axes([0.3, 0.05, 0.1, 0.075])
+        ax_prev = plt.axes([0.2, 0.05, 0.1, 0.075])
+        ax_next = plt.axes([0.4, 0.05, 0.1, 0.075])
+        ax_speed = plt.axes([0.6, 0.05, 0.2, 0.075])
+        
+        self.btn_play = Button(ax_play, 'Пауза' if self.playing else 'Старт')
+        self.btn_prev = Button(ax_prev, 'Назад')
+        self.btn_next = Button(ax_next, 'Вперед')
+        self.slider_speed = Slider(ax_speed, 'Скорость', 100, 1000, valinit=self.speed)
+        
+        self.btn_play.on_clicked(self.toggle_play)
+        self.btn_prev.on_clicked(self.prev_step)
+        self.btn_next.on_clicked(self.next_step)
+        self.slider_speed.on_changed(self.update_speed)
+        
+        self.timer = self.fig.canvas.new_timer(interval=self.speed)
+        self.timer.add_callback(self.auto_step)
+        
+        self.update_plot()
+        
+    def update_plot(self):
+        self.ax.clear()
+        vis_grid = np.array(self.grid)
+        
+
+        for i, node in enumerate(self.explored):
+            if i < self.current_frame:
+                vis_grid[node[0]][node[1]] = 5
+        
+
+        if self.current_frame >= len(self.explored) and self.path:
+            for step in self.path:
+                if step != self.start and step != self.end:
+                    vis_grid[step[0]][step[1]] = 2
+
+        vis_grid[self.start[0]][self.start[1]] = 3
+        vis_grid[self.end[0]][self.end[1]] = 4
+        
+        self.ax.imshow(vis_grid, cmap=self.cmap, norm=self.norm)
+        self.ax.set_title(f"Шаг {self.current_frame}/{len(self.explored)}")
+        self.ax.grid(which='major', axis='both', linestyle='-', color='k', linewidth=2)
+        self.ax.set_xticks(np.arange(-.5, len(self.grid[0]), 1))
+        self.ax.set_yticks(np.arange(-.5, len(self.grid), 1))
+        self.ax.set_xticklabels([])
+        self.ax.set_yticklabels([])
+        
+        self.fig.canvas.draw()
+    
+    def toggle_play(self, event):
+        self.playing = not self.playing
+        self.btn_play.label.set_text('Пауза' if self.playing else 'Старт')
+        if self.playing:
+            self.timer.start()
+        else:
+            self.timer.stop()
+    
+    def prev_step(self, event):
+        if self.playing:
+            self.toggle_play(None)
+        self.current_frame = max(0, self.current_frame - 1)
+        self.update_plot()
+    
+    def next_step(self, event):
+        if self.playing:
+            self.toggle_play(None)
+        self.current_frame = min(len(self.explored) + 10, self.current_frame + 1)
+        self.update_plot()
+    
+    def auto_step(self):
+        if self.current_frame < len(self.explored) + 10:
+            self.current_frame += 1
+            self.update_plot()
+        else:
+            self.toggle_play(None)
+    
+    def update_speed(self, val):
+        self.speed = val
+        self.timer.interval = self.speed
+
+if __name__ == '__main__':
+    grid = [
+        [0, 0, 0, 0, 1, 0, 0, 0],
+        [0, 0, 0, 0, 1, 0, 0, 0],
+        [0, 0, 0, 0, 1, 0, 0, 0],
+        [0, 0, 0, 0, 1, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 1, 1, 1, 1, 0, 0],
+        [0, 0, 0, 0, 1, 0, 0, 0],
+        [0, 0, 0, 0, 1, 0, 0, 0]
+    ]
+    
+    start = (0, 0)
+    end = (7, 6)
+
+    path, explored = a_star_search(grid, start, end)
+    
+    if path:
+        print(f"Путь найден: {path}")
+        visualizer = AStarVisualizer(grid, path, explored, start, end)
+        plt.show()
+    else:
+        print("Путь не найден!")
