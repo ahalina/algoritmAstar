@@ -1,1 +1,1 @@
-# algoritmAstar
+# algorithmAstar
